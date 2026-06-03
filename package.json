@@ -1,0 +1,60 @@
+{
+  "name": "testrelic-smart-reporter",
+  "version": "1.0.0",
+  "description": "AI-powered Playwright test intelligence CLI that transforms buried XML reports into actionable insights",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "smart-reporter": "./bin/smart-reporter.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report:analyze": "node dist/cli.js analyze --input test-results/junit-report.xml --output report.json --fail-on-failures",
+    "report:watch": "node dist/cli.js watch --dir test-results --interval 5000",
+    "ci": "npm run build && (npx playwright test || cd .) && npm run report:analyze",
+    "lint": "eslint src/ tests/",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "playwright",
+    "testrelic",
+    "test-analytics",
+    "ci-cd",
+    "test-intelligence",
+    "fde-assignment"
+  ],
+  "author": "Mukesh (FDE Intern Candidate)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "boxen": "^7.1.1",
+    "chalk": "^5.3.0",
+    "chokidar": "^3.6.0",
+    "commander": "^12.0.0",
+    "dayjs": "^1.11.10",
+    "fast-xml-parser": "^4.3.6",
+    "figlet": "^1.7.0",
+    "fs-extra": "^11.2.0",
+    "glob": "^13.0.6",
+    "node-fetch": "^3.3.2",
+    "open": "^11.0.0",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "@testrelic/playwright-analytics": "latest",
+    "@types/figlet": "^1.7.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.19.41",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.9.3"
+  }
+}
