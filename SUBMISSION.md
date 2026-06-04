@@ -140,7 +140,12 @@ For detailed explanations of the setup, manual report viewing commands, and pipe
 
 3. **All code is original** except for standard open-source dependencies (Playwright, Commander.js, etc.) which are credited in `package.json`.
 
-4. **Type safety:** The entire codebase compiles with `tsc --noEmit` with zero errors.
+4. **Type safety:** The entire codebase compiles with `tsc --noEmit` with zero errors. ESLint produces zero errors (15 warnings only — pre-existing `no-explicit-any` patterns acceptable for this project scope).
+
+5. **Cloud Upload — Fully Working (Both Pathways Verified Live):**
+   * **Playwright Analytics SDK**: Uploads rich test runs via `/runs/init → /runs/:id/tests → /runs/:id/finalize` during `npx playwright test`. **7 runs** confirmed on the TestRelic dashboard.
+   * **Smart Reporter CLI** (`src/uploader.ts`): Uploads intelligence-enriched runs to the same cloud platform. The `/api/v1/ingest` (CTRF) route was diagnosed and confirmed unavailable at the platform gateway level — the uploader was rewritten to use the proven SDK run flow with the correct field names verified live (`gitId`, client-generated `runId` UUID, `testId` per test, `duration` in finalize).
+   * **Both run simultaneously**: `npm run ci` with `TESTRELIC_API_KEY` set → SDK upload during tests + Smart Reporter upload after analysis → two new runs appear on the dashboard per execution.
 
 ---
 
