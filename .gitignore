@@ -37,3 +37,6 @@ npm-debug.log*
 # Temporary files
 *.tmp
 .cache/
+
+# TestRelic test artifacts
+test-results/artifacts/

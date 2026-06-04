@@ -3,7 +3,7 @@
  * Tests the CLI commands work correctly with real XML output
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@testrelic/playwright-analytics/fixture';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';

@@ -12,7 +12,8 @@
  * to fail to demonstrate the Smart Reporter's failure analysis.
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { Page } from '@playwright/test';
+import { test, expect } from '@testrelic/playwright-analytics/fixture';
 import {
   VALID_USER, INVALID_USER, NEW_TASK,
   LOGIN_SELECTORS, DASHBOARD_SELECTORS, MODAL_SELECTORS
@@ -232,4 +233,75 @@ test('navigation-logout-returns-to-login-page', async ({ page }) => {
   // In a real app this would redirect; our demo shows login form
   await page.goto('http://localhost:3456');
   await expect(page.locator(LOGIN_SELECTORS.loginButton)).toBeVisible();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEST 8: Task Management — Empty Title Input Validation
+// Validates: Form validation inside modal, error state styling, recovery
+// Regression risk: MEDIUM — validation feedback loops
+// ═══════════════════════════════════════════════════════════════
+test('task-management-empty-title-validation', async ({ page }) => {
+  await loginAsUser(page, VALID_USER.email, VALID_USER.password);
+
+  // Open modal
+  await page.click(DASHBOARD_SELECTORS.addTaskButton);
+  await expect(page.locator(MODAL_SELECTORS.modal)).toBeVisible();
+
+  // Try to save with empty title
+  await page.click(MODAL_SELECTORS.saveButton);
+
+  // Title input border should turn red (rgb(239, 68, 68) is #ef4444)
+  const titleInput = page.locator(MODAL_SELECTORS.titleInput);
+  await expect(titleInput).toHaveCSS('border-color', 'rgb(239, 68, 68)');
+
+  // Modal should remain active
+  await expect(page.locator(MODAL_SELECTORS.modal)).toBeVisible();
+
+  // Fill in a valid title
+  await titleInput.fill('Valid Task from Validation Test');
+  await page.click(MODAL_SELECTORS.saveButton);
+
+  // Modal should close now
+  await expect(page.locator(MODAL_SELECTORS.modal)).not.toBeVisible();
+
+  // New task should appear in the list
+  const newTaskElement = page.locator(DASHBOARD_SELECTORS.taskItems).filter({ hasText: 'Valid Task from Validation Test' });
+  await expect(newTaskElement).toBeVisible();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEST 9: Task Management — Cancel Modal and Overlay Dismissal
+// Validates: Modal cancellation buttons, overlay backdrop click behavior
+// Regression risk: LOW — UX interaction patterns
+// ═══════════════════════════════════════════════════════════════
+test('task-management-modal-cancellation-and-overlay-click', async ({ page }) => {
+  await loginAsUser(page, VALID_USER.email, VALID_USER.password);
+
+  // 1. Test Cancel button
+  await page.click(DASHBOARD_SELECTORS.addTaskButton);
+  await expect(page.locator(MODAL_SELECTORS.modal)).toBeVisible();
+
+  // Fill in title
+  await page.fill(MODAL_SELECTORS.titleInput, 'Cancelled Task Title');
+  
+  // Click Cancel button
+  await page.click(MODAL_SELECTORS.cancelButton);
+
+  // Modal should close and the input field should be reset
+  await expect(page.locator(MODAL_SELECTORS.modal)).not.toBeVisible();
+  
+  // Verify field resets next time modal is opened
+  await page.click(DASHBOARD_SELECTORS.addTaskButton);
+  await expect(page.locator(MODAL_SELECTORS.titleInput)).toHaveValue('');
+  await page.click(MODAL_SELECTORS.cancelButton);
+
+  // 2. Test Overlay Click
+  await page.click(DASHBOARD_SELECTORS.addTaskButton);
+  await expect(page.locator(MODAL_SELECTORS.modal)).toBeVisible();
+
+  // Click modal overlay backdrop (the overlay div itself, near the top-left edge)
+  await page.locator(MODAL_SELECTORS.modal).click({ position: { x: 5, y: 5 } });
+
+  // Modal should close
+  await expect(page.locator(MODAL_SELECTORS.modal)).not.toBeVisible();
 });

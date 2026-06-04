@@ -3,7 +3,7 @@
  * Tests parsing of various JUnit XML formats that Playwright produces
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@testrelic/playwright-analytics/fixture';
 import { JUnitParser } from '../../src/parser.js';
 
 test.describe('JUnitParser', () => {

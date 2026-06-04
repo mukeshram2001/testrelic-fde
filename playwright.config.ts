@@ -10,19 +10,13 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['junit', { outputFile: 'test-results/junit-report.xml' }],
     ['list'],
-    process.env.TESTRELIC_API_KEY
-      ? ['@testrelic/playwright-analytics', {
-          apiKey: process.env.TESTRELIC_API_KEY,
-          projectName: 'fde-assignment-smart-reporter',
-          environment: process.env.CI ? 'ci' : 'local',
-          ci: {
-            provider: 'github',
-            repository: process.env.GITHUB_REPOSITORY,
-            runId: process.env.GITHUB_RUN_ID,
-            runUrl: process.env.GITHUB_RUN_URL,
-          }
-        }]
-      : ['null'],
+    ['@testrelic/playwright-analytics/reporter', {
+      cloud: {
+        apiKey: 'tr_live_54edd70fdf55ceed2c5763a47befcaa01d8b3a37a2adf4c52315fa9960c7e40a',
+        upload: 'realtime',
+        uploadArtifacts: true,
+      },
+    }],
   ],
   outputDir: 'test-results/',
   use: {
