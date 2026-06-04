@@ -99,7 +99,8 @@ testrelic-fde-assignment/
 │   │   └── parser.spec.ts        ← Parser unit tests
 │   └── fixtures/
 │       ├── demo-app/
-│       │   └── index.html        ← Test target (TaskFlow app)
+│       │   ├── index.html        ← Test target (TaskFlow app)
+│       │   └── server.js         ← Backend CRUD API server (Isolated state)
 │       └── test-data.ts          ← Shared test data
 ├── docs/
 │   ├── problem.md                ← Part 1: Problem Decomposition
@@ -116,7 +117,7 @@ testrelic-fde-assignment/
 
 ```bash
 git clone <repo-url>
-cd testrelic-fde-assignment
+git checkout -b mukesh/fde-assignment
 npm install
 npm run ci             # Run full build, tests, and analysis in one command
 ```
@@ -146,6 +147,12 @@ For detailed explanations of the setup, manual report viewing commands, and pipe
    * **Playwright Analytics SDK**: Uploads rich test runs via `/runs/init → /runs/:id/tests → /runs/:id/finalize` during `npx playwright test`. **7 runs** confirmed on the TestRelic dashboard.
    * **Smart Reporter CLI** (`src/uploader.ts`): Uploads intelligence-enriched runs to the same cloud platform. The `/api/v1/ingest` (CTRF) route was diagnosed and confirmed unavailable at the platform gateway level — the uploader was rewritten to use the proven SDK run flow with the correct field names verified live (`gitId`, client-generated `runId` UUID, `testId` per test, `duration` in finalize).
    * **Both run simultaneously**: `npm run ci` with `TESTRELIC_API_KEY` set → SDK upload during tests + Smart Reporter upload after analysis → two new runs appear on the dashboard per execution.
+
+6. **Backend Infrastructure & CRUD REST APIs:**
+   * **Backend Server**: Implemented a custom Node.js HTTP server at `tests/fixtures/demo-app/server.js` with zero runtime dependencies.
+   * **CRUD REST Endpoints**: Serves the frontend static files and exposes `/api/auth/login` (POST), `/api/tasks` (GET/POST), and `/api/tasks/:id` (PUT).
+   * **Test Runner Isolation**: Implemented a client-scoping mechanism using an `X-Client-ID` header. This isolates database state in-memory per browser worker session, preventing parallel browsers (Chromium vs Firefox) or parallel workers from corrupting each other's test assertions.
+   * **Network Log Capture**: Playwright Analytics SDK now records genuine HTTP trace calls between the client and backend APIs, fulfilling the CEO's goal of real-world server communication telemetry.
 
 ---
 

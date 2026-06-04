@@ -13,7 +13,7 @@
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
-    "report:analyze": "node dist/cli.js analyze --input test-results/junit-report.xml --output report.json --fail-on-failures",
+    "report:analyze": "node dist/cli.js analyze --input test-results/junit-report.xml --output report.json --fail-on-failures --api-key tr_live_54edd70fdf55ceed2c5763a47befcaa01d8b3a37a2adf4c52315fa9960c7e40a",
     "report:watch": "node dist/cli.js watch --dir test-results --interval 5000",
     "ci": "npm run build && (npx playwright test || cd .) && npm run report:analyze",
     "lint": "eslint src/ tests/",

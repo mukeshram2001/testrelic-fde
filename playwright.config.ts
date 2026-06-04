@@ -35,7 +35,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx serve tests/fixtures/demo-app -p 3456',
+    command: 'node tests/fixtures/demo-app/server.js',
     url: 'http://localhost:3456',
     reuseExistingServer: !process.env.CI,
   },
