@@ -305,3 +305,70 @@ test('task-management-modal-cancellation-and-overlay-click', async ({ page }) =>
   // Modal should close
   await expect(page.locator(MODAL_SELECTORS.modal)).not.toBeVisible();
 });
+
+// ═══════════════════════════════════════════════════════════════
+// TEST 10: Special Scenario — Flaky Test Demonstration
+// Validates: TestRelic flaky test identification. Fails on first run, passes on retry.
+// Regression risk: LOW — diagnostic test
+// ═══════════════════════════════════════════════════════════════
+test('special-scenario-flaky-test-demonstration', async ({ page }) => {
+  await loginAsUser(page, VALID_USER.email, VALID_USER.password);
+  
+  // Verify we are on the dashboard
+  await expect(page.locator(DASHBOARD_SELECTORS.navDashboard)).toBeVisible();
+
+  // Fail on the first try (attempt 0), but pass on the retry (attempt 1)
+  if (test.info().retry === 0) {
+    // Assert a mismatched title to force retry
+    await expect(page.locator(DASHBOARD_SELECTORS.userEmail)).toHaveText('force-failure@example.com');
+  } else {
+    // Pass on retry
+    await expect(page.locator(DASHBOARD_SELECTORS.userEmail)).toHaveText(VALID_USER.email);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEST 11: Special Scenario — Failing Assertion Demonstration
+// Validates: TestRelic error triage. Fails with mismatching error message.
+// Regression risk: LOW — diagnostic test
+// ═══════════════════════════════════════════════════════════════
+test('special-scenario-failing-assertion-demonstration', async ({ page }) => {
+  await page.goto('http://localhost:3456');
+  await page.fill(LOGIN_SELECTORS.emailInput, INVALID_USER.email);
+  await page.fill(LOGIN_SELECTORS.passwordInput, INVALID_USER.password);
+  await page.click(LOGIN_SELECTORS.loginButton);
+
+  // Assert against wrong error text to force an expected assertion failure
+  const errorContainer = page.locator(LOGIN_SELECTORS.errorMessage);
+  await expect(errorContainer).toBeVisible();
+  await expect(errorContainer).toContainText('Internal Server Error 500');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEST 12: Special Scenario — Slow Load Performance
+// Validates: TestRelic performance bottlenecks and latency flags.
+// Regression risk: LOW — diagnostic test
+// ═══════════════════════════════════════════════════════════════
+test('special-scenario-slow-load-performance', async ({ page }) => {
+  await loginAsUser(page, VALID_USER.email, VALID_USER.password);
+  
+  // Introduce a 4.5-second sleep to mark this test as slow/heavy
+  await page.waitForTimeout(4500);
+  
+  await expect(page.locator(DASHBOARD_SELECTORS.userEmail)).toHaveText(VALID_USER.email);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEST 13: Special Scenario — Intentional Timeout Scenario
+// Validates: TestRelic timeout root cause classification.
+// Regression risk: LOW — diagnostic test
+// ═══════════════════════════════════════════════════════════════
+test('special-scenario-intentional-timeout-scenario', async ({ page }) => {
+  // Set a short timeout for this test so it fails fast
+  test.setTimeout(2500);
+
+  await loginAsUser(page, VALID_USER.email, VALID_USER.password);
+  
+  // Wait for a non-existent spinner with a high timeout to guarantee test timeout
+  await page.waitForSelector('.non-existent-spinner-loading-element', { timeout: 5000 });
+});
