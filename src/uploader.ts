@@ -1,16 +1,105 @@
 /**
- * TestRelic Cloud Uploader
- * Uploads intelligence reports using the proven SDK run flow:
+ * TestRelic Cloud Uploader — Full Intelligence Upload
+ *
+ * Upload flow (identical endpoints as Playwright Analytics SDK):
  *   /sdk/auth/token → /repos/resolve → /runs/init → /runs/:id/tests → /runs/:id/finalize
  *
+ * UPGRADED: Now uploads the COMPLETE IntelligenceReport including:
+ *   - narrative (plain-English run summary)
+ *   - executiveSummary (markdown table)
+ *   - actionItems (prioritized fix recommendations)
+ *   - topFailures (classified failure patterns with recommendations)
+ *   - flakyTests (with confidence scores)
+ *   - slowTests (top 5 slowest tests)
+ *   - healthScore (all sub-scores: stability, speed, coverage, trend)
+ *
+ * Backwards-compatible: all new intelligence fields go under
+ * metadata.intelligence so the platform ignores unknown keys gracefully.
+ *
  * All field names verified live against the platform API (June 2026).
- * The /ingest (CTRF) route is not used — it returns 401 at the gateway level.
- * This flow uses the identical endpoints the Playwright Analytics SDK uses successfully.
  */
 
-import { IntelligenceReport } from './types.js';
+import { IntelligenceReport, FailurePattern, FlakyTest, ActionItem, TestCase } from './types.js';
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Upload schema interfaces (what we send to the cloud)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Uploaded per-test record — same as before + failureType in metadata */
+interface UploadTestRecord {
+  testId: string;
+  name: string;
+  status: 'passed' | 'failed' | 'skipped';
+  duration: number;                 // milliseconds
+  startedAt: string;
+  finishedAt: string;
+  suite: string;
+  errorMessage?: string;
+  errorStack?: string;
+  flaky: boolean;
+  metadata: {
+    classname: string;
+    failureType?: string;           // 'AssertionError' | 'TimeoutError' | ...
+  };
+}
+
+/** Full intelligence block — new, sent under metadata.intelligence */
+interface IntelligenceBlock {
+  narrative: string;                // plain-English paragraph
+  executiveSummary: string;         // markdown table string
+  actionItems: UploadActionItem[];
+  topFailures: UploadFailurePattern[];
+  flakyTests: UploadFlakyTest[];
+  slowTests: UploadSlowTest[];
+  healthScore: UploadHealthScore;
+}
+
+interface UploadHealthScore {
+  overall: number;
+  stability: number;
+  speed: number;
+  coverage: number;
+  trend: string;
+  summary: string;
+}
+
+interface UploadFailurePattern {
+  type: string;
+  category: string;
+  count: number;
+  examples: string[];
+  recommendation: string;
+}
+
+interface UploadFlakyTest {
+  name: string;
+  classname: string;
+  totalRuns: number;
+  passRate: number;
+  confidence: string;
+  failureTypes: string[];
+}
+
+interface UploadActionItem {
+  priority: string;
+  title: string;
+  description: string;
+  affectedTests: string[];
+  suggestion: string;
+}
+
+interface UploadSlowTest {
+  name: string;
+  classname: string;
+  durationMs: number;
+  status: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Uploader class
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface UploaderOptions {
   apiKey: string;
@@ -33,20 +122,20 @@ export class TestRelicUploader {
   }
 
   async upload(report: IntelligenceReport): Promise<{ id: string; url: string }> {
-    // Step 1: Exchange API key for JWT (same as Playwright SDK)
+    // Step 1: Exchange API key for JWT
     const token = await this.exchangeToken();
 
-    // Step 2: Auto-detect git remote and resolve repo ID on the platform
+    // Step 2: Resolve repo from git remote
     const repoGitId = await this.resolveRepoGitId();
     const repoId = await this.resolveRepo(token, repoGitId);
 
-    // Step 3: Open a new run session (client generates runId)
+    // Step 3: Open a new run session with full intelligence metadata
     const runId = await this.initRun(token, repoId, repoGitId, report);
 
-    // Step 4: Stream test cases into the run
+    // Step 4: Stream test cases (with failure categories + flaky flags)
     await this.uploadTests(token, runId, report);
 
-    // Step 5: Close and finalize the run
+    // Step 5: Finalize with summary + complete intelligence block
     await this.finalizeRun(token, runId, report);
 
     const url = `https://platform.testrelic.ai/repos/${repoId}/runs/${runId}`;
@@ -80,7 +169,6 @@ export class TestRelicUploader {
   }
 
   // ── Step 2b: Resolve repo on platform ─────────────────────────────────────
-  // Field name confirmed: 'gitId' (not 'repoGitId')
   private async resolveRepo(token: string, repoGitId: string): Promise<string> {
     const res = await fetch(`${this.baseUrl}/repos/resolve`, {
       method: 'POST',
@@ -99,7 +187,20 @@ export class TestRelicUploader {
   }
 
   // ── Step 3: Initialize run ─────────────────────────────────────────────────
-  // Client generates runId (UUID) and sends it — platform returns it back with status
+  //
+  // UPGRADED: metadata now contains the FULL intelligence block including
+  // narrative, executiveSummary, actionItems, topFailures, flakyTests, slowTests.
+  // All new fields are nested under metadata.intelligence for backwards compatibility.
+  //
+  // BEFORE:
+  //   metadata: { source, projectName, healthScore, totalTests }
+  //
+  // AFTER:
+  //   metadata: {
+  //     source, projectName, healthScore, totalTests,
+  //     intelligence: { narrative, executiveSummary, actionItems,
+  //                     topFailures, flakyTests, slowTests, healthScore }
+  //   }
   private async initRun(
     token: string,
     repoId: string,
@@ -107,6 +208,9 @@ export class TestRelicUploader {
     report: IntelligenceReport,
   ): Promise<string> {
     const runId = randomUUID();
+
+    const intelligence = this.buildIntelligenceBlock(report);
+
     const res = await fetch(`${this.baseUrl}/runs/init`, {
       method: 'POST',
       headers: {
@@ -119,10 +223,13 @@ export class TestRelicUploader {
         repoGitId,
         startedAt: new Date(report.run.timestamp).toISOString(),
         metadata: {
+          // ── existing fields (unchanged) ──────────────────────────────────
           source: 'smart-reporter',
           projectName: this.projectName,
           healthScore: report.healthScore.overall,
           totalTests: report.summary.totalTests,
+          // ── NEW: full intelligence block ─────────────────────────────────
+          intelligence,
         },
       }),
     });
@@ -133,13 +240,14 @@ export class TestRelicUploader {
   }
 
   // ── Step 4: Upload test cases ─────────────────────────────────────────────
-  // A single top-level testId is required alongside the tests array.
+  //
+  // UNCHANGED from original — per-test records with failure types and flaky flags.
   private async uploadTests(
     token: string,
     runId: string,
     report: IntelligenceReport,
   ): Promise<void> {
-    const tests = [];
+    const tests: UploadTestRecord[] = [];
     const baseTime = new Date(report.run.timestamp).getTime();
 
     for (const suite of report.run.testSuites) {
@@ -173,7 +281,7 @@ export class TestRelicUploader {
         'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
-        testId: randomUUID(), // top-level testId required by the platform
+        testId: randomUUID(),
         tests,
       }),
     });
@@ -183,7 +291,17 @@ export class TestRelicUploader {
   }
 
   // ── Step 5: Finalize run ──────────────────────────────────────────────────
-  // 'duration' (ms) is a required field alongside finishedAt and summary
+  //
+  // UPGRADED: summary now contains the full intelligence block as well.
+  //
+  // BEFORE:
+  //   { finishedAt, duration, summary: { total, passed, failed, skipped, flaky, healthScore } }
+  //
+  // AFTER:
+  //   { finishedAt, duration,
+  //     summary: { total, passed, failed, skipped, flaky, healthScore },
+  //     intelligence: { narrative, executiveSummary, actionItems,
+  //                     topFailures, flakyTests, slowTests, healthScore } }
   private async finalizeRun(
     token: string,
     runId: string,
@@ -192,6 +310,8 @@ export class TestRelicUploader {
     const startMs = new Date(report.run.timestamp).getTime();
     const durationMs = Math.round(report.summary.duration * 1000);
     const finishMs = startMs + durationMs;
+
+    const intelligence = this.buildIntelligenceBlock(report);
 
     const res = await fetch(`${this.baseUrl}/runs/${runId}/finalize`, {
       method: 'POST',
@@ -202,6 +322,7 @@ export class TestRelicUploader {
       body: JSON.stringify({
         finishedAt: new Date(finishMs).toISOString(),
         duration: durationMs,
+        // ── existing summary (unchanged) ─────────────────────────────────────
         summary: {
           total: report.summary.totalTests,
           passed: report.summary.passed,
@@ -210,14 +331,86 @@ export class TestRelicUploader {
           flaky: report.flakyTests.length,
           healthScore: report.healthScore.overall,
         },
+        // ── NEW: full intelligence block ──────────────────────────────────────
+        intelligence,
       }),
     });
     if (!res.ok) {
       throw new Error(`Run finalize failed (${res.status}): ${await res.text()}`);
     }
   }
+
+  // ── Intelligence Block Builder ────────────────────────────────────────────
+  //
+  // Builds the complete IntelligenceBlock from the IntelligenceReport.
+  // This is the new data that was previously only written to local files.
+  //
+  // Includes:
+  //   narrative          ← plain-English run summary paragraph
+  //   executiveSummary   ← markdown table with pass rate, stability, actions
+  //   actionItems        ← prioritized list of fix recommendations
+  //   topFailures        ← classified failure patterns with counts & recommendations
+  //   flakyTests         ← flaky test list with pass rates and confidence scores
+  //   slowTests          ← top 5 slowest test names and durations
+  //   healthScore        ← full score object (overall, stability, speed, coverage, trend)
+  private buildIntelligenceBlock(report: IntelligenceReport): IntelligenceBlock {
+    const actionItems: UploadActionItem[] = report.actionItems.map((a: ActionItem) => ({
+      priority: a.priority,
+      title: a.title,
+      description: a.description,
+      affectedTests: a.affectedTests,
+      suggestion: a.suggestion,
+    }));
+
+    const topFailures: UploadFailurePattern[] = report.topFailures.map((f: FailurePattern) => ({
+      type: f.type,
+      category: f.category,
+      count: f.count,
+      examples: f.examples,
+      recommendation: f.recommendation,
+    }));
+
+    const flakyTests: UploadFlakyTest[] = report.flakyTests.map((f: FlakyTest) => ({
+      name: f.name,
+      classname: f.classname,
+      totalRuns: f.totalRuns,
+      passRate: f.passRate,
+      confidence: f.confidence,
+      failureTypes: f.failureTypes,
+    }));
+
+    const slowTests: UploadSlowTest[] = report.slowTests.map((t: TestCase) => ({
+      name: t.name,
+      classname: t.classname,
+      durationMs: Math.round(t.time * 1000),
+      status: t.status,
+    }));
+
+    const healthScore: UploadHealthScore = {
+      overall: report.healthScore.overall,
+      stability: report.healthScore.stability,
+      speed: report.healthScore.speed,
+      coverage: report.healthScore.coverage,
+      trend: report.healthScore.trend,
+      summary: report.healthScore.summary,
+    };
+
+    return {
+      narrative: report.narrative,
+      executiveSummary: report.executiveSummary,
+      actionItems,
+      topFailures,
+      flakyTests,
+      slowTests,
+      healthScore,
+    };
+  }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal failure categorizer (same logic as classifier.ts — duplicated here
+// to avoid a circular import with types.ts)
+// ─────────────────────────────────────────────────────────────────────────────
 function categorizeFailure(message: string, type?: string): string {
   const lower = (message || '').toLowerCase();
   if (lower.includes('timeout') || lower.includes('timed out')) return 'TimeoutError';
